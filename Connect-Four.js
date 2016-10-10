@@ -14,6 +14,7 @@ Page.columns = 7;
 Page.$initModal = null;
 Page.$connectPlayersModal = null;
 Page.$gameOverModal = null;
+Page.$replayDeclined = null;
 // player related variables
 Page.playerTurn = null;
 Page.playerNumber = -1;
@@ -36,6 +37,7 @@ Page.initialize = function() {
     Page.$initModal = $('#init-modal');
     Page.$connectPlayersModal = $('#connect-players-modal');
     Page.$gameOverModal = $('#game-over-modal');
+    Page.$replayDeclined = $('#replay-declined-modal');
 
     Page.placementArray = Helpers.create2DArray(Page.rows, Page.columns);
     Page.placementOrder = [];
@@ -267,7 +269,12 @@ Page.createGameData = function() {
     // create the empty placement array on the database
     database.ref('connect-four/' + Page.gameUUID).set({
         'placementArray': Page.placementArray,
-        'player2Ready': false // player 1 creates the game so assume they're ready
+        'player1Ready': true,
+        'player2Ready': false,
+        'player1ReplayDenied': false,
+        'player2ReplayDenied': false,
+        'player1ReplayAccepted': false,
+        'player2ReplayAccepted': false
     });
 
     database.ref('connect-four/' + Page.gameUUID + '/turn').set({
@@ -277,10 +284,44 @@ Page.createGameData = function() {
     });
 };
 
+Page.player1Ready = function() {
+    database.ref('connect-four/' + Page.gameUUID).update({
+        'player1Ready': true
+    });
+};
+
 Page.player2Ready = function() {
     database.ref('connect-four/' + Page.gameUUID).update({
         'player2Ready': true
     });
+};
+
+Page.replayDenied = function() {
+    if (Page.playerNumber === 0) {
+        database.ref('connect-four/' + Page.gameUUID).update({
+            'player1ReplayDenied': true,
+            'player1Ready': false
+        });
+    } else {
+        database.ref('connect-four/' + Page.gameUUID).update({
+            'player2ReplayDenied': true,
+            'player2Ready': false
+        });
+    }
+};
+
+Page.replayAccepted = function() {
+    if (Page.playerNumber === 0) {
+        database.ref('connect-four/' + Page.gameUUID).update({
+            'player1ReplayAccepted': true,
+            'player1Ready': true
+        });
+    } else {
+        database.ref('connect-four/' + Page.gameUUID).update({
+            'player2ReplayAccepted': true,
+            'player2Ready': true
+        });
+    }
 };
 
 Page.saveGameData = function() {
@@ -289,7 +330,7 @@ Page.saveGameData = function() {
         'player': Page.playerTurn
     };
     updates['connect-four/' + Page.gameUUID + '/turn'] = {
-        'playerTurn': Helpers.updatePlayerTurn(),
+        'playerTurn': Helpers.updatePlayerTurn(), // update the player turn to the next player
         'drawPieceAt': Page.piecePlacedAt,
         'gameOver': Page.isGameOver
     };
@@ -298,31 +339,51 @@ Page.saveGameData = function() {
     return database.ref().update(updates);
 };
 
+Page.undoMove = function() {
+
+};
+
 Page.getGameData = function() {
     database.ref('connect-four/' + Page.gameUUID).on('value', function(snapshot) {
-        if (snapshot.val()) {
-            Page.placementArray = snapshot.val().placementArray;
+        var data = snapshot.val();
+        if (data) {
+            Page.placementArray = data.placementArray;
 
-            // if (Page.playerTurn !== snapshot.val().turn.playerTurn) {
-            Page.playerTurn = snapshot.val().turn.playerTurn;
+            Page.playerTurn = data.turn.playerTurn;
             console.log(Page.playerTurn);
             Helpers.updateTurnLabels(Page.playerTurn, Page.playerNumber);
-            // }
 
-            if (snapshot.val().turn.drawPieceAt[0] !== -1 &&
-                snapshot.val().turn.drawPieceAt[1] !== -1) {
-                if (Page.piecePlacedAt[0] !== snapshot.val().turn.drawPieceAt[0] ||
-                    Page.piecePlacedAt[1] !== snapshot.val().turn.drawPieceAt[1]) {
-                    Page.piecePlacedAt = snapshot.val().turn.drawPieceAt;
-                    Page.drawOpponentMove();
+            // make sure we're actually updating the value and not looking at our previous entry
+            if (data.turn.drawPieceAt[0] !== -1 &&
+                data.turn.drawPieceAt[1] !== -1 &&
+                (Page.piecePlacedAt[0] !== data.turn.drawPieceAt[0] ||
+                    Page.piecePlacedAt[1] !== data.turn.drawPieceAt[1])) {
+                Page.piecePlacedAt = data.turn.drawPieceAt;
+                Page.drawOpponentMove();
+            }
+
+            if (data.turn.gameOver && !Page.isGameOver) {
+                Page.gameOver();
+            } else {
+                Page.isGameOver = false;
+            }
+
+            if (data.turn.gameOver && Page.isGameOver) {
+                if ((data.player1ReplayDenied && Page.playerNumber == 1) ||
+                    data.player2ReplayDenied && Page.playerNumber == 0) {
+                    Page.$gameOverModal.modal('hide');
+                    Page.$replayDeclined.modal('show');
+                } else if (data.player1ReplayAccepted && data.player2ReplayAccepted) {
+                    console.log('both players want replay');
+                    // only allow player 1 to reset the game (since they created it to begin with
+                    // and we don't want both players to create a game at the same time)
+                    if (Page.playerNumber === 0) {
+                        Page.resetGame();
+                    }
                 }
             }
 
-            if (snapshot.val().turn.gameOver && !Page.isGameOver) {
-                Page.gameOver();
-            }
-
-            if (!Page.gameStarted && snapshot.val().player2Ready) {
+            if (!Page.gameStarted && data.player2Ready) {
                 Page.attachListeners();
                 Helpers.hideLoadingOverlay();
                 Page.$connectPlayersModal.modal('hide');
@@ -331,7 +392,6 @@ Page.getGameData = function() {
         } else {
             console.warn('error getting data')
         }
-        console.log(snapshot.val());
     });
 };
 
@@ -410,10 +470,15 @@ Page.gameOver = function() {
     Page.$maskCanvas.off('mouseup');
     Page.isGameOver = true;
 
-    Page.$gameOverModal.on('show.bs.modal', function(e) {
-        $(this).find('#confirm-replay-game').on('click', function() {
-            Page.resetGame();
+    Page.$gameOverModal.one('show.bs.modal', function(e) {
+        $(this).find('#confirm-replay-game').one('click', function() {
             Page.$gameOverModal.modal('hide');
+            Page.replayAccepted();
+        });
+
+        $(this).find('#deny-replay-game').one('click', function() {
+            Page.$gameOverModal.modal('hide');
+            Page.replayDenied();
         });
     });
 
@@ -421,12 +486,16 @@ Page.gameOver = function() {
 };
 
 Page.resetGame = function() {
+    // clear the canvas
     Page.context.clearRect(0, 0, Page.canvasWidth, Page.canvasHeight);
-    Page.playerTurn = 0;
+    // reset game variables
     Page.placementArray = Helpers.create2DArray(Page.rows, Page.columns);
     Page.placementOrder = [];
+    Page.piecePlacedAt = [];
+    // clear game data in the database
+    Page.createGameData();
+    // reattach click events
     Page.attachCanvasListener();
-    Page.isGameOver = false;
 };
 
 //#endregion Reset / Replay
