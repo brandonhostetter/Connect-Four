@@ -80,7 +80,7 @@
             </div>
         </div>
 
-        <!-- End Game Modal -->
+        <!-- Game Over Modal -->
         <div id="game-over-modal" class="modal fade" tabindex="-1" role="dialog">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -93,7 +93,25 @@
                     </div>
                     <div class="modal-footer">
                         <button id="confirm-replay-game" class="btn btn-primary">Yes</button>
-                        <button class="btn btn-default" data-dismiss="modal">No</button>
+                        <button id="deny-replay-game" class="btn btn-default" data-dismiss="modal">No</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Replay Declined Modal -->
+        <div id="replay-declined-modal" class="modal fade" tabindex="-1" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button class="close" data-dismiss="modal"><span>&times;</span></button>
+                        <h4 class="modal-title">Replay Declined</h4>
+                    </div>
+                    <div class="modal-body">
+                        <p>Your friend has declined to play again.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-default" data-dismiss="modal">Ok</button>
                     </div>
                 </div>
             </div>
