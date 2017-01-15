@@ -15,20 +15,22 @@ Page.$initModal = null;
 Page.$connectPlayersModal = null;
 Page.$gameOverModal = null;
 Page.$replayDeclined = null;
-// player related variables
+// player / game related variables
 Page.playerTurn = null;
 Page.playerNumber = -1;
 Page.piececolors = ['gold', 'orangered'];
 Page.placementArray = null;
-Page.placementOrder = null;
+Page.placementOrder = [];
 Page.y = 0;
 Page.dy = 20;
-Page.piecePlacedAt = null;
+Page.piecePlacedAt = [];
 Page.isGameOver = false;
 Page.gameUUID = '';
 Page.gameStarted = false;
+Page.isLocalGame = false;
 
 Page.initialize = function() {
+    // get dom references
     Page.$canvas = $('#connect-four-canvas');
     Page.context = Page.$canvas[0].getContext('2d');
     Page.$maskCanvas = $('#connect-four-mask-canvas');
@@ -40,11 +42,7 @@ Page.initialize = function() {
     Page.$replayDeclined = $('#replay-declined-modal');
 
     Page.placementArray = Helpers.create2DArray(Page.rows, Page.columns);
-    Page.placementOrder = [];
-    Page.piecePlacedAt = [];
-
     Page.drawOpeningMask();
-
     Page.determineOpeningAction();
 };
 
@@ -58,6 +56,7 @@ Page.determineOpeningAction = function() {
         // this is player 2
         Page.playerNumber = 1;
         Page.joinExistingGame();
+        Page.isLocalGame = false;
     } else {
         // No existing game to join
         // Instead, ask the user if they would like to play on one computer or two
@@ -70,15 +69,25 @@ Page.determineOpeningAction = function() {
 Page.displayInitModal = function() {
     Page.$initModal.modal('show');
 
-    // play on one computer
-    Page.$initModal.find('#play-one-computer').on('click', function() {
+    // single player game vs computer
+    Page.$initModal.find('#play-ai').on('click', function() {
+        console.log('Playing single player vs computer');
+        Page.initSinglePlayer();
         Page.$initModal.modal('hide');
     });
 
-    // play on two computers (connect two games)
-    Page.$initModal.find('#play-two-computers').on('click', function() {
+    // two player local game
+    Page.$initModal.find('#play-local-multi').on('click', function() {
+        console.log('Playing two player local game');
+        Page.initLocalMulti();
+        Page.$initModal.modal('hide');
+    });
+
+    // two player online game
+    Page.$initModal.find('#play-online-multi').on('click', function() {
+        console.log('Playing two player online game');
         Helpers.showLoadingOverlay(); // display an overlay until player 2 joins
-        Page.multiComputer();
+        Page.initOnlineMulti();
         Page.createGameData();
         Page.getGameData();
         Page.$initModal.modal('hide');
@@ -90,7 +99,20 @@ Page.attachListeners = function() {
     Page.attachButtonListeners();
 };
 
-Page.multiComputer = function() {
+Page.initSinglePlayer = function() {
+    Page.attachListeners();
+    Page.playerTurn = 0;
+    Page.isLocalGame = true;
+};
+
+Page.initLocalMulti = function() {
+    Page.attachListeners();
+    Page.playerTurn = 0;
+    Page.isLocalGame = true;
+    Page.gameStarted = true;
+};
+
+Page.initOnlineMulti = function() {
     // Generate a unique id for the game
     Page.gameUUID = Helpers.generateGUID();
     // Change the url to reflect the unique id
@@ -114,7 +136,7 @@ Page.joinExistingGame = function() {
 
 Page.attachCanvasListener = function() {
     Page.$maskCanvas.on('mouseup', function(e) {
-        if (Page.isAnimating || (Page.playerTurn != Page.playerNumber)) {
+        if (Page.isAnimating || (!Page.isLocalGame && (Page.playerTurn != Page.playerNumber))) {
             return;
         } //else
 
@@ -147,7 +169,11 @@ Page.attachButtonListeners = function() {
     });
 
     $('#restart-button').on('click', function(e) {
-        Page.resetGame();
+        if (!isLocalGame) {
+            // get confirmation from other user that they would like to reset the game
+        } else {
+            Page.resetGame();
+        }
     });
 };
 
@@ -179,6 +205,7 @@ Page.drawOpeningMask = function() {
     // the pieces will fill;
     Page.maskContext.fillStyle = 'cornflowerBlue';
     Page.maskContext.beginPath();
+
     for (var i = 0; i < Page.rows; i++) {
         for (var j = 0; j < Page.columns; j++) {
             Page.maskContext.arc(75 * j + 50, 75 * i + 48, 30, 0, 2 * Math.PI);
@@ -190,6 +217,7 @@ Page.drawOpeningMask = function() {
             }
         }
     }
+
     Page.maskContext.closePath();
     Page.maskContext.fill('evenodd');
 };
@@ -216,7 +244,9 @@ Page.drawDropAnimation = function() {
         }
 
         // update database
-        Page.saveGameData();
+        if (!Page.isLocalGame) {
+            Page.saveGameData();
+        }
 
         Page.drawPlacedPieces();
         Page.isAnimating = false;
@@ -407,7 +437,6 @@ Page.getGameData = function() {
 //#region Win Condition
 
 Page.isThereAWinner = function() {
-    var p = Page.playerTurn;
     var matchesHorizontal = 0;
     var matchVertical = 0;
     for (var i = 0; i < Page.rows; i++) {
@@ -415,7 +444,7 @@ Page.isThereAWinner = function() {
 
         for (var j = 0; j < Page.columns; j++) {
             // check horizontal
-            if (Page.placementArray[i][j].player === p) {
+            if (Page.placementArray[i][j].player === Page.playerTurn) {
                 matchesHorizontal++;
                 if (matchesHorizontal == 4) {
                     return true;
@@ -425,7 +454,7 @@ Page.isThereAWinner = function() {
             }
 
             // check vertical
-            if (j - 1 > -1 && Page.placementArray[j - 1][i].player === p) {
+            if (j - 1 > -1 && Page.placementArray[j - 1][i].player === Page.playerTurn) {
                 matchVertical++;
                 if (matchVertical == 4) {
                     return true;
@@ -480,7 +509,11 @@ Page.gameOver = function() {
     Page.$gameOverModal.one('show.bs.modal', function(e) {
         $(this).find('#confirm-replay-game').one('click', function() {
             Page.$gameOverModal.modal('hide');
-            Page.replayAccepted();
+            if (Page.isLocalGame) {
+                Page.resetGame();
+            } else {
+                Page.replayAccepted();
+            }
         });
 
         $(this).find('#deny-replay-game').one('click', function() {
@@ -499,8 +532,12 @@ Page.resetGame = function() {
     Page.placementArray = Helpers.create2DArray(Page.rows, Page.columns);
     Page.placementOrder = [];
     Page.piecePlacedAt = [];
-    // clear game data in the database
-    Page.createGameData();
+
+    if (!Page.isLocalGame) {
+        // clear game data in the database
+        Page.createGameData();
+    }
+
     // reattach click events
     Page.attachCanvasListener();
 };
