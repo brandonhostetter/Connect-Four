@@ -178,13 +178,20 @@ Page.drawOpeningMask = function() {
     // We draw this once at initialization. This is the 'cut-out' of the holes
     // the pieces will fill;
     Page.maskContext.fillStyle = 'cornflowerBlue';
+    Page.maskContext.beginPath();
     for (var i = 0; i < Page.rows; i++) {
         for (var j = 0; j < Page.columns; j++) {
             Page.maskContext.arc(75 * j + 50, 75 * i + 48, 30, 0, 2 * Math.PI);
-            Page.maskContext.rect(75 * j + 90, 96 * i, -85, 96);
+            if (j === 0) {
+                // offset a little more on the left most column so we aren't right on the edge
+                Page.maskContext.rect(75 * j + 90, 96 * i, -80, 96);
+            } else {
+                Page.maskContext.rect(75 * j + 90, 96 * i, -75, 96);
+            }
         }
     }
-    Page.maskContext.fill();
+    Page.maskContext.closePath();
+    Page.maskContext.fill('evenodd');
 };
 
 Page.drawPiece = function(x, y, player) {
